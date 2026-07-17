@@ -48,4 +48,6 @@ WORKDIR ${XV6}
 
 COPY --chown=xv6:xv6 . .
 
-CMD ["make", "qemu"]
+WORKDIR ${XV6}/xv6-env
+
+ENTRYPOINT ["/bin/bash"]
