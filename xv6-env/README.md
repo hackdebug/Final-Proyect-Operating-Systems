@@ -1,61 +1,68 @@
-xv6-env
-=======
-Docker image for building/running xv6-riscv
+# Proyecto Final — Sistemas Operativos (xv6-riscv modificado)
 
-## Typical Usage
-Make sure that you have a copy of [xv6-riscv](https://github.com/mit-pdos/xv6-riscv) distribution in the filesystem of your host computer.
-You can obtain it using the following command (Skip this step if you already have one).
-```
-$ git clone https://github.com/mit-pdos/xv6-riscv.git
+Este repositorio es un fork de [xv6-riscv](https://github.com/mit-pdos/xv6-riscv) (MIT PDOS)
+con dos modificaciones sobre el planificador de CPU y el gestor de memoria.
+
+## Cómo ejecutar (con Docker)
+
+```bash
+docker build -t xv6-proyecto-os .
+docker run -it --rm xv6-proyecto-os
 ```
 
-The image is available on [Docker Hub](https://hub.docker.com/r/wtakuo/xv6-env).
-You can start a new container with the command below.
-Note that `path-to-xv6-riscv` refers to the path to your copy of xv6-riscv distribution on the host.
-```
-$ cd path-to-xv6-riscv
-$ docker run -it --rm -v $(pwd):/home/xv6/xv6-riscv wtakuo/xv6-env
-```
-The image supports multiple architectures (currently arm64 and amd64).
-If you need a container for a specific architecture, use [`wtakuo/xv6-env-arm64`](https://hub.docker.com/r/wtakuo/xv6-env-arm64) or [`wtakuo/xv6-env-amd64`](https://hub.docker.com/r/wtakuo/xv6-env-amd64) instead.
+Al arrancar verás el mensaje de memoria libre agregado en `kernel/kalloc.c`.
+Dentro del shell de xv6, corre el nuevo comando de diagnóstico:
 
-If things go well, you should see the following output from the newly started container.
 ```
-To run a command as administrator (user "root"), use "sudo <command>".
-See "man sudo_root" for details.
+$ pstat
+```
 
-xv6@0c765f60374a:~/xv6-riscv$ 
-```
-The shell prompt (`xv6@0c765f60374a:~/xv6-riscv$`) consists of the username (`xv6`), hostname (`0c765f60374a`), and current working directory (`/home/xv6/xv6-riscv`). The hostname is the same as the container ID. So it may differ from the above example.
+Para salir de QEMU: `Ctrl+A` y luego `X`.
 
-Now make sure that you can build and start xv6.
+## Cómo ejecutar (sin Docker, con el toolchain instalado)
+
+```bash
+make TOOLPREFIX=riscv64-linux-gnu- qemu
 ```
-xv6@0c765f60374a:~/xv6-riscv$ make
-...
-xv6@0c765f60374a:~/xv6-riscv$ make qemu
-...
+
+## Modificaciones realizadas
+
+### 1. Planificador de CPU — nueva syscall `pstat` (herramienta de diagnóstico)
+
+- **Archivos:** `kernel/syscall.h`, `kernel/syscall.c`, `kernel/sysproc.c`,
+  `user/user.h`, `user/usys.pl`, `user/pstat.c`, `Makefile`.
+- Se agregó la syscall número 23 (`SYS_pstat`), implementada en `sys_pstat()`
+  (`kernel/sysproc.c`), que reutiliza la función interna `procdump()` de
+  `kernel/proc.c` para imprimir el PID, estado (`RUNNABLE`, `RUNNING`,
+  `SLEEPING`, etc.) y nombre de cada proceso activo en la tabla de procesos.
+- Se agregó el programa de usuario `pstat` (`user/pstat.c`) para invocarla
+  desde el shell.
+- **Justificación (informe):** da visibilidad en tiempo real del estado de
+  la cola de procesos que recorre el `scheduler()` (Round Robin, `kernel/proc.c`
+  línea ~425). Es la base para instrumentar y comparar el comportamiento de
+  un futuro planificador por prioridades frente al Round Robin original.
+
+### 2. Gestor de memoria — reporte de memoria física libre al arrancar
+
+- **Archivo:** `kernel/kalloc.c`, función `kinit()`.
+- Justo después de poblar `kmem.freelist` (la lista enlazada de páginas
+  libres), se recorre la lista para contar las páginas disponibles y se
+  imprime el total en KB durante el boot.
+- **Justificación (informe):** hace visible el estado inicial del asignador
+  físico de páginas (`kalloc()`/`kfree()`), sin alterar su lógica interna,
+  como primer paso hacia la instrumentación de una futura política de
+  asignación distinta a la lista enlazada simple.
+
+## Evidencia de ejecución
+
+```
 xv6 kernel is booting
 
-hart 2 starting
-hart 1 starting
-init: starting sh
-$ 
-```
-To exit from xv6, type `ctrl-A` followed by `x`.
-
-## Opfs
-For your convenience, this docker image contains [opfs](https://github.com/titech-os/opfs), a simple utility for operating on xv6 file system images. 
-
-## To build the image by yourself
-If you want to build the docker image by yourself, you can use the following commands.
-```
-$ git pull https://github.com/wtakuo/xv6-env.git
-$ cd xv6-env
-$ docker build -t wtakuo/xv6-env .
+memoria fisica libre: 130928 KB (32732 paginas de 4096 bytes)
+$ pstat
+1 sleep  init
+2 sleep  sh
+3 run    pstat
 ```
 
-## Note
-The container runs bash with user `xv6`.
-The password of the user is `xv6`.
-
-If you would like to install some packages using apt, you should first issue `sudo apt update`.
+Ver también `cambios_proyecto_os.diff` para el diff completo de los cambios.

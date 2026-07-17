@@ -1,0 +1,109 @@
+diff --git a/Makefile b/Makefile
+index f59a9ad..b995fc1 100644
+--- a/Makefile
++++ b/Makefile
+@@ -146,6 +146,7 @@ UPROGS=\
+ 	$U/_forphan\
+ 	$U/_dorphan\
+ 	$U/_sync\
++	$U/_pstat\
+ 
+ fs.img: mkfs/mkfs README $(UPROGS)
+ 	mkfs/mkfs fs.img README $(UPROGS)
+diff --git a/kernel/kalloc.c b/kernel/kalloc.c
+index 2fcec38..388f82f 100644
+--- a/kernel/kalloc.c
++++ b/kernel/kalloc.c
+@@ -28,6 +28,19 @@ kinit()
+ {
+   initlock(&kmem.lock, "kmem");
+   freerange(end, (void *)PHYSTOP);
++
++  // PROYECTO OS: reporta la memoria fisica libre disponible justo
++  // despues de poblar kmem.freelist. Recorre la lista enlazada de
++  // paginas libres (struct run) para contarlas y mostrar el total
++  // en KB, dando visibilidad del estado inicial del asignador.
++  {
++    struct run *r;
++    uint64 freepages = 0;
++    for (r = kmem.freelist; r; r = r->next)
++      freepages++;
++    printk("memoria fisica libre: %d KB (%d paginas de %d bytes)\n",
++           (int)(freepages * PGSIZE / 1024), (int)freepages, (int)PGSIZE);
++  }
+ }
+ 
+ void
+diff --git a/kernel/syscall.c b/kernel/syscall.c
+index 7fc48f5..9478bbb 100644
+--- a/kernel/syscall.c
++++ b/kernel/syscall.c
+@@ -103,6 +103,7 @@ extern uint64 sys_link(void);
+ extern uint64 sys_mkdir(void);
+ extern uint64 sys_close(void);
+ extern uint64 sys_sync(void);
++extern uint64 sys_pstat(void); // PROYECTO OS: nueva syscall de diagnostico de procesos
+ 
+ // An array mapping syscall numbers from syscall.h
+ // to the function that handles the system call.
+@@ -130,6 +131,7 @@ static uint64 (*syscalls[])(void) = {
+   [SYS_mkdir]   sys_mkdir,
+   [SYS_close]   sys_close,
+   [SYS_sync]    sys_sync,
++  [SYS_pstat]   sys_pstat, // PROYECTO OS: nueva syscall de diagnostico de procesos
+   // clang-format on
+ };
+ 
+diff --git a/kernel/syscall.h b/kernel/syscall.h
+index 5a4a39f..f9c7743 100644
+--- a/kernel/syscall.h
++++ b/kernel/syscall.h
+@@ -21,3 +21,4 @@
+ #define SYS_mkdir  20
+ #define SYS_close  21
+ #define SYS_sync   22
++#define SYS_pstat  23 // PROYECTO OS: nueva syscall de diagnostico de procesos
+diff --git a/kernel/sysproc.c b/kernel/sysproc.c
+index 73ff1f3..3b71476 100644
+--- a/kernel/sysproc.c
++++ b/kernel/sysproc.c
+@@ -97,6 +97,18 @@ sys_kill(void)
+ 
+ // return how many clock tick interrupts have occurred
+ // since start.
++// PROYECTO OS: nueva syscall de diagnostico. Expone la lista de procesos
++// activos y su estado (RUNNABLE, RUNNING, SLEEPING, etc.) para dar
++// visibilidad del scheduler en tiempo de ejecucion. Sienta la base para
++// una futura implementacion de un planificador por prioridades, ya que
++// permite inspeccionar el estado de la cola de procesos.
++uint64
++sys_pstat(void)
++{
++  procdump();
++  return 0;
++}
++
+ uint64
+ sys_uptime(void)
+ {
+diff --git a/user/user.h b/user/user.h
+index 29aad59..5d35a7e 100644
+--- a/user/user.h
++++ b/user/user.h
+@@ -25,6 +25,7 @@ char *sys_sbrk(int, int);
+ int pause(int);
+ int uptime(void);
+ int sync(void);
++int pstat(void); // PROYECTO OS: nueva syscall de diagnostico de procesos
+ 
+ // ulib.c
+ int stat(const char *, struct stat *);
+diff --git a/user/usys.pl b/user/usys.pl
+index 4d054e8..d7a2d1a 100755
+--- a/user/usys.pl
++++ b/user/usys.pl
+@@ -43,3 +43,4 @@ entry("sbrk");
+ entry("pause");
+ entry("uptime");
+ entry("sync");
++entry("pstat"); # PROYECTO OS: nueva syscall de diagnostico de procesos
